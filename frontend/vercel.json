@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://bharatbrief-001-backend.vercel.app/:path*" }
+  ]
+}

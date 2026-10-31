@@ -50,7 +50,7 @@ Database on **Neon**, OTP email via **Brevo** (Vercel functions should send mail
    - `FRONTEND_URL`: `http://localhost:5173` for now
 
    Deploy, then open `https://<backend>.vercel.app/health`: it should say `healthy`.
-4. **Frontend on Vercel**: *Add New → Project*, import the same repo again, set **Root Directory** to `frontend`, project name e.g. `bharatbrief`. Env var `VITE_API_URL` = backend URL. Deploy.
+4. **Frontend on Vercel**: *Add New → Project*, import the same repo again, set **Root Directory** to `frontend`, project name e.g. `bharatbrief`. `frontend/vercel.json` forwards `/api/*` to the backend, so no env var is needed (update the URL in that file if your backend URL differs). Deploy.
 5. In the backend project, set `FRONTEND_URL` to the frontend URL, then *Deployments → Redeploy*.
 6. **News every 30 minutes**: Vercel's free cron only runs once a day (`vercel.json`), so also create a free job on **cron-job.org**:
    URL `https://<backend>.vercel.app/cron/collect-news`, every 30 minutes, header `Authorization: Bearer <CRON_SECRET>`.
