@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import re
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,6 +19,12 @@ from backend.app.auth import router as auth_router
 IST = ZoneInfo("Asia/Kolkata")
 
 COLLECTION_INTERVAL_MINUTES = 30
+
+# On Vercel the app only runs while handling a request, so the in-process
+# scheduler can't work there. News collection is triggered by calling
+# GET /cron/collect-news instead (cron-job.org every 30 min + Vercel daily cron).
+RUNNING_ON_VERCEL = bool(os.getenv("VERCEL"))
+CRON_SECRET = os.getenv("CRON_SECRET")
 RETENTION_DAYS = 30
 MAX_NEWS_RECORDS = 500
 
@@ -153,6 +159,10 @@ def startup():
 
     create_tables()
 
+    if RUNNING_ON_VERCEL:
+        print("Running on Vercel: scheduler disabled, use /cron/collect-news.")
+        return
+
     if not scheduler.running:
 
         scheduler.add_job(
@@ -221,6 +231,26 @@ def collect_news():
         return {
             "status": "success",
             "message": "PIB news collection completed",
+            "results": result,
+            "storage_cleanup": cleanup_result
+        }
+
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error))
+
+
+@app.get("/cron/collect-news")
+def cron_collect_news(authorization: str = Header(default=None)):
+
+    if CRON_SECRET and authorization != f"Bearer {CRON_SECRET}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        result = save_pib_news(limit=20)
+        cleanup_result = cleanup_old_news()
+
+        return {
+            "status": "success",
             "results": result,
             "storage_cleanup": cleanup_result
         }

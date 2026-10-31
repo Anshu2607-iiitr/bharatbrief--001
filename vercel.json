@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/cron/collect-news", "schedule": "30 0 * * *" }
+  ]
+}

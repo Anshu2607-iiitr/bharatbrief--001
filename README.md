@@ -35,18 +35,23 @@ If no email provider is set in `.env`, the signup OTP is printed in the backend 
 
 To protect any route: `def route(user = Depends(get_current_user))` (from `backend.app.auth`).
 
-## Deploy (all free plans)
+## Deploy on Vercel (free)
 
-Database on **Neon**, backend on **Render**, frontend on **Vercel**, OTP email via **Brevo**.
-(Render's free plan blocks SMTP ports, so Gmail SMTP will not work there; Brevo sends over HTTPS.)
+Two Vercel projects from this one repo: the **backend** (repo root, FastAPI) and the **frontend** (`frontend/` folder).
+Database on **Neon**, OTP email via **Brevo** (Vercel functions should send mail over HTTPS, not SMTP).
 
-1. **Neon** (neon.tech): create a project and copy the connection string (`postgresql://...`).
-2. **Brevo** (brevo.com): sign up, go to *Senders, Domains & Dedicated IPs → Senders*, add and verify your Gmail. Then *SMTP & API → API Keys* and create a key.
-3. **Render** (render.com): *New → Blueprint*, pick this repo. It reads `render.yaml` and asks for:
-   - `DATABASE_URL`: the Neon string
+1. **Neon** (neon.tech): create a project, copy the connection string (`postgresql://...`).
+2. **Brevo** (brevo.com): *Senders* → add and verify your Gmail; *SMTP & API → API Keys* → create a key.
+3. **Backend on Vercel**: *Add New → Project*, import this repo, keep Root Directory as `./`, project name e.g. `bharatbrief-api`. Environment variables:
+   - `DATABASE_URL`: Neon string
+   - `SECRET_KEY`: long random string
+   - `CRON_SECRET`: another long random string
    - `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`
-   - `FRONTEND_URL`: leave as `http://localhost:5173` for now, update after step 4
-4. **Vercel** (vercel.com): *Add New → Project*, import this repo, set **Root Directory** to `frontend`, and add env var `VITE_API_URL` = your Render URL (e.g. `https://bharatbrief-api.onrender.com`). Deploy.
-5. Back in Render, set `FRONTEND_URL` to your Vercel URL (e.g. `https://bharatbrief.vercel.app`) and save. It redeploys.
+   - `FRONTEND_URL`: `http://localhost:5173` for now
 
-Note: Render's free service sleeps after 15 minutes without traffic, so the first request after that takes ~1 minute, and news collection only runs while it is awake.
+   Deploy, then open `https://<backend>.vercel.app/health`: it should say `healthy`.
+4. **Frontend on Vercel**: *Add New → Project*, import the same repo again, set **Root Directory** to `frontend`, project name e.g. `bharatbrief`. Env var `VITE_API_URL` = backend URL. Deploy.
+5. In the backend project, set `FRONTEND_URL` to the frontend URL, then *Deployments → Redeploy*.
+6. **News every 30 minutes**: Vercel's free cron only runs once a day (`vercel.json`), so also create a free job on **cron-job.org**:
+   URL `https://<backend>.vercel.app/cron/collect-news`, every 30 minutes, header `Authorization: Bearer <CRON_SECRET>`.
+   Run it once by hand to fill the feed right away.
