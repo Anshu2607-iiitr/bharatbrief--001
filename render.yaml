@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: bharatbrief-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false   # Neon connection string
+      - key: FRONTEND_URL
+        sync: false   # e.g. https://bharatbrief.vercel.app
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false   # the Gmail you verified as a sender in Brevo

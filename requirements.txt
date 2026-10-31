@@ -1,0 +1,14 @@
+
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+feedparser
+httpx
+beautifulsoup4
+pydantic-settings
+python-dotenv
+apscheduler
+bcrypt
+PyJWT
+email-validator
