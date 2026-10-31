@@ -1,0 +1,23 @@
+[project]
+name = "bharatbrief-api"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "psycopg[binary]",
+    "feedparser",
+    "httpx",
+    "beautifulsoup4",
+    "pydantic-settings",
+    "python-dotenv",
+    "apscheduler",
+    "bcrypt",
+    "PyJWT",
+    "email-validator",
+]
+
+# Tells Vercel where the FastAPI app lives
+[tool.vercel]
+entrypoint = "backend.app.main:app"
