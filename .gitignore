@@ -6,3 +6,5 @@ node_modules/
 dist/
 .vite/
 .idea/
+test_audio.mp3
+test_podcast.mp3

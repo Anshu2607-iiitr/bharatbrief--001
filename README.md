@@ -1,8 +1,9 @@
 # Bharat Brief
 
-Official PIB news, collected automatically and sorted by category, with email + password accounts and email OTP verification on signup.
+Official PIB news, collected automatically and sorted by category, in 22 Indian languages, with article audio, an AI chatbot, AI news podcasts, related news, and email + password accounts with OTP verification on signup.
 
 - **Backend:** FastAPI, SQLAlchemy, PostgreSQL, APScheduler (collects PIB news every 30 minutes)
+- **AI:** Sarvam AI for translation, text-to-speech, chat and podcasts; TF-IDF (scikit-learn) for related news
 - **Frontend:** React + Vite
 - **Auth:** bcrypt-hashed passwords, JWT tokens (7 days), 6-digit email OTP on signup (10 min expiry, 5 attempts, 60s resend cooldown)
 
@@ -46,6 +47,7 @@ Database on **Neon**, OTP email via **Brevo** (Vercel functions should send mail
    - `DATABASE_URL`: Neon string
    - `SECRET_KEY`: long random string
    - `CRON_SECRET`: another long random string
+   - `SARVAM_API_KEY`, `SARVAM_CHAT_API_KEY`, `SARVAM_PODCAST_API_KEY`: from sarvam.ai (each AI feature only works once its key is set)
    - `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`
    - `FRONTEND_URL`: `http://localhost:5173` for now
 

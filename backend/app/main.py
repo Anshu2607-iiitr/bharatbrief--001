@@ -1,32 +1,72 @@
 
+import base64
 import os
+import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import re
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from backend.app.database import test_connection, create_tables, engine
-from backend.app.models import News
+from backend.app.models import News, TranslationCache
 from backend.app.news_service import save_pib_news
 from backend.app.category_classifier import CATEGORIES, get_category_string
+from backend.app.related_news import get_related_news
 from backend.app.auth import router as auth_router
+
+from backend.app.translation_service import (
+    SUPPORTED_LANGUAGES,
+    translate_text as translate_service_text,
+    translate_article
+)
+
+from backend.app.tts_service import generate_long_speech
+from backend.app.chat_service import generate_chat_response
+
+from backend.app.podcast_service import (
+    generate_podcast_script,
+    generate_podcast_audio,
+    SUPPORTED_PODCAST_LANGUAGES
+)
 
 
 IST = ZoneInfo("Asia/Kolkata")
 
 COLLECTION_INTERVAL_MINUTES = 30
+RETENTION_DAYS = 30
+MAX_NEWS_RECORDS = 500
 
 # On Vercel the app only runs while handling a request, so the in-process
 # scheduler can't work there. News collection is triggered by calling
 # GET /cron/collect-news instead (cron-job.org every 30 min + Vercel daily cron).
 RUNNING_ON_VERCEL = bool(os.getenv("VERCEL"))
 CRON_SECRET = os.getenv("CRON_SECRET")
-RETENTION_DAYS = 30
-MAX_NEWS_RECORDS = 500
+
+
+class TranslationRequest(BaseModel):
+    text: str
+    source_language: str = "en-IN"
+    target_language: str = "hi-IN"
+
+
+class ChatRequest(BaseModel):
+    message: str
+    language_code: str = "hi-IN"
+
+
+class PodcastRequest(BaseModel):
+    categories: list[str] = Field(default_factory=list)
+    language_code: str = "hi-IN"
+    duration: int = Field(default=5, ge=1, le=15)
+
 
 scheduler = BackgroundScheduler(timezone=IST)
 
@@ -37,8 +77,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Frontend URL(s) allowed to call this API, comma-separated.
-# e.g. FRONTEND_URL=https://bharatbrief.vercel.app
+# Frontend URL(s) allowed to call this API directly, comma-separated.
+# On Vercel the frontend forwards /api/* to the backend, so this is optional.
 allowed_origins = [
     origin.strip().rstrip("/")
     for origin in os.getenv("FRONTEND_URL", "http://localhost:5173").split(",")
@@ -71,6 +111,7 @@ def generate_short_description(description, content, max_length=350):
     result = ""
 
     for sentence in sentences:
+
         sentence = sentence.strip()
 
         if not sentence:
@@ -141,6 +182,7 @@ def cleanup_old_news():
 def automatic_news_collection():
 
     try:
+
         print("\nAutomatic news collection started...")
 
         result = save_pib_news(limit=20)
@@ -151,6 +193,7 @@ def automatic_news_collection():
         print("Storage cleanup completed:", cleanup_result)
 
     except Exception as error:
+
         print("Automatic news collection failed:", error)
 
 
@@ -186,7 +229,9 @@ def startup():
 def shutdown():
 
     if scheduler.running:
+
         scheduler.shutdown(wait=False)
+
         print("Bharat Brief scheduler stopped.")
 
 
@@ -209,6 +254,7 @@ def health_check():
 def test_db():
 
     try:
+
         result = test_connection()
 
         return {
@@ -218,14 +264,20 @@ def test_db():
         }
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.post("/collect-news")
 def collect_news():
 
     try:
+
         result = save_pib_news(limit=20)
+
         cleanup_result = cleanup_old_news()
 
         return {
@@ -236,7 +288,11 @@ def collect_news():
         }
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.get("/cron/collect-news")
@@ -246,7 +302,9 @@ def cron_collect_news(authorization: str = Header(default=None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
+
         result = save_pib_news(limit=20)
+
         cleanup_result = cleanup_old_news()
 
         return {
@@ -256,13 +314,18 @@ def cron_collect_news(authorization: str = Header(default=None)):
         }
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.post("/classify-news")
 def classify_existing_news():
 
     try:
+
         classified_count = 0
         uncategorized_count = 0
 
@@ -303,13 +366,18 @@ def classify_existing_news():
         }
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.post("/reclassify-news")
 def reclassify_all_news():
 
     try:
+
         processed_count = 0
         changed_count = 0
         classified_count = 0
@@ -353,13 +421,18 @@ def reclassify_all_news():
         }
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.get("/categories")
 def get_categories():
 
     try:
+
         with Session(engine) as session:
 
             news_list = session.query(News.category).all()
@@ -397,13 +470,18 @@ def get_categories():
             }
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.get("/storage-status")
 def storage_status():
 
     try:
+
         with Session(engine) as session:
 
             total_news = session.query(News).count()
@@ -450,7 +528,11 @@ def storage_status():
             }
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.get("/news")
@@ -460,6 +542,7 @@ def get_news(
 ):
 
     try:
+
         with Session(engine) as session:
 
             query = session.query(News)
@@ -471,6 +554,7 @@ def get_news(
                 ]
 
                 if category not in allowed_categories:
+
                     raise HTTPException(
                         status_code=400,
                         detail="Invalid news category"
@@ -514,13 +598,149 @@ def get_news(
         raise
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+
+@app.get("/news/timeline")
+def get_news_timeline(
+    days: int = Query(default=30, ge=1, le=30),
+    limit: int = Query(default=100, ge=1, le=500)
+):
+
+    try:
+
+        with Session(engine) as session:
+
+            current_time = datetime.now(IST)
+
+            cutoff_date = current_time - timedelta(days=days)
+
+            news_list = (
+                session.query(News)
+                .filter(
+                    News.published_date >= cutoff_date,
+                    News.published_date <= current_time
+                )
+                .order_by(
+                    News.published_date.desc(),
+                    News.id.desc()
+                )
+                .limit(limit)
+                .all()
+            )
+
+            timeline = {}
+
+            for item in news_list:
+
+                if item.published_date is None:
+                    continue
+
+                date_key = item.published_date.strftime("%Y-%m-%d")
+
+                if date_key not in timeline:
+
+                    timeline[date_key] = {
+                        "date": date_key,
+                        "total_news": 0,
+                        "news": []
+                    }
+
+                timeline[date_key]["total_news"] += 1
+
+                timeline[date_key]["news"].append({
+                    "id": item.id,
+                    "title": item.title,
+                    "description": generate_short_description(
+                        item.description,
+                        item.content
+                    ),
+                    "published_date": item.published_date,
+                    "source": item.source,
+                    "category": item.category,
+                    "url": item.url
+                })
+
+            return {
+                "status": "success",
+                "days": days,
+                "total_news": len(news_list),
+                "total_dates": len(timeline),
+                "timeline": list(timeline.values())
+            }
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+
+@app.get("/news/{news_id}/related")
+def get_related_news_api(
+    news_id: int,
+    limit: int = Query(default=5, ge=1, le=10)
+):
+
+    try:
+
+        related_articles = get_related_news(
+            news_id=news_id,
+            limit=limit
+        )
+
+        if not related_articles:
+
+            with Session(engine) as session:
+
+                exists = session.query(News.id).filter(
+                    News.id == news_id
+                ).first()
+
+                if not exists:
+
+                    raise HTTPException(
+                        status_code=404,
+                        detail="News article not found"
+                    )
+
+        return {
+            "status": "success",
+            "current_news_id": news_id,
+            "total_related_news": len(related_articles),
+            "related_news": [
+                {
+                    **article,
+                    "description": generate_short_description(
+                        article.get("description"),
+                        article.get("title")
+                    )
+                }
+                for article in related_articles
+            ]
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 @app.get("/news/{news_id}")
 def get_news_detail(news_id: int):
 
     try:
+
         with Session(engine) as session:
 
             news = session.query(News).filter(
@@ -528,6 +748,7 @@ def get_news_detail(news_id: int):
             ).first()
 
             if news is None:
+
                 raise HTTPException(
                     status_code=404,
                     detail="News article not found"
@@ -554,4 +775,451 @@ def get_news_detail(news_id: int):
         raise
 
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+
+@app.get("/languages")
+def get_supported_languages():
+
+    return {
+        "status": "success",
+        "total_languages": len(SUPPORTED_LANGUAGES),
+        "languages": [
+            {
+                "name": name,
+                "code": code
+            }
+            for name, code in SUPPORTED_LANGUAGES.items()
+        ]
+    }
+
+
+@app.post("/translate")
+def translate_text_api(request: TranslationRequest):
+
+    try:
+
+        if not request.text.strip():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Text cannot be empty"
+            )
+
+        if request.source_language not in SUPPORTED_LANGUAGES.values():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported source language"
+            )
+
+        if request.target_language not in SUPPORTED_LANGUAGES.values():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported target language"
+            )
+
+        translated_text = translate_service_text(
+            text=request.text,
+            source_language=request.source_language,
+            target_language=request.target_language
+        )
+
+        return {
+            "status": "success",
+            "original_text": request.text,
+            "translated_text": translated_text,
+            "source_language": request.source_language,
+            "target_language": request.target_language
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+
+@app.post("/news/{news_id}/translate")
+def translate_news_article(
+    news_id: int,
+    target_language: str = Query(...)
+):
+
+    try:
+
+        if target_language not in SUPPORTED_LANGUAGES.values():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported target language"
+            )
+
+        with Session(engine) as session:
+
+            article = session.query(News).filter(
+                News.id == news_id
+            ).first()
+
+            if article is None:
+
+                raise HTTPException(
+                    status_code=404,
+                    detail="News article not found"
+                )
+
+            cached_translation = session.query(
+                TranslationCache
+            ).filter(
+                TranslationCache.news_id == news_id,
+                TranslationCache.target_language == target_language
+            ).first()
+
+            if cached_translation:
+
+                translated_article = {
+                    "title": cached_translation.title,
+                    "description": cached_translation.description,
+                    "content": cached_translation.content,
+                    "target_language": target_language
+                }
+
+                return {
+                    "status": "success",
+                    "message": "Translation fetched from cache",
+                    "cached": True,
+                    "news_id": article.id,
+                    "original_language": "en-IN",
+                    "target_language": target_language,
+                    "original_article": {
+                        "title": article.title,
+                        "description": article.description,
+                        "content": article.content
+                    },
+                    "translated_article": translated_article
+                }
+
+            translated_article = translate_article(
+                article=article,
+                target_language=target_language
+            )
+
+            new_cache = TranslationCache(
+                news_id=article.id,
+                target_language=target_language,
+                title=translated_article.get("title"),
+                description=translated_article.get("description"),
+                content=translated_article.get("content")
+            )
+
+            session.add(new_cache)
+            session.commit()
+
+            return {
+                "status": "success",
+                "message": "Article translated and saved in cache",
+                "cached": False,
+                "news_id": article.id,
+                "original_language": "en-IN",
+                "target_language": target_language,
+                "original_article": {
+                    "title": article.title,
+                    "description": article.description,
+                    "content": article.content
+                },
+                "translated_article": translated_article
+            }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+
+# ==========================================
+# TEXT TO SPEECH - FULL ARTICLE AUDIO
+# ==========================================
+
+@app.post("/news/{news_id}/listen")
+def listen_to_news(
+    news_id: int,
+    target_language: str = Query(default="en-IN")
+):
+
+    try:
+
+        if target_language not in SUPPORTED_LANGUAGES.values():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported language"
+            )
+
+        with Session(engine) as session:
+
+            article = session.query(News).filter(
+                News.id == news_id
+            ).first()
+
+            if article is None:
+
+                raise HTTPException(
+                    status_code=404,
+                    detail="News article not found"
+                )
+
+            if target_language == "en-IN":
+
+                title = article.title or ""
+                description = article.description or ""
+                content = article.content or ""
+
+            else:
+
+                cached_translation = session.query(
+                    TranslationCache
+                ).filter(
+                    TranslationCache.news_id == news_id,
+                    TranslationCache.target_language == target_language
+                ).first()
+
+                if cached_translation is None:
+
+                    raise HTTPException(
+                        status_code=404,
+                        detail="Please translate this article first"
+                    )
+
+                title = cached_translation.title or ""
+                description = cached_translation.description or ""
+                content = cached_translation.content or ""
+
+            text_to_speak = "\n\n".join(
+                part.strip()
+                for part in [title, description, content]
+                if part and part.strip()
+            )
+
+        if not text_to_speak.strip():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Article has no content to read"
+            )
+
+        audio_data = generate_long_speech(
+            text=text_to_speak,
+            language_code=target_language
+        )
+
+        return Response(
+            content=audio_data,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "inline; filename=news_audio.mp3"
+            }
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+
+# ==========================================
+# AI CHATBOT - MULTILINGUAL TEXT TO TEXT
+# ==========================================
+
+@app.post("/chat")
+def chat_with_ai(request: ChatRequest):
+
+    try:
+
+        if not request.message or not request.message.strip():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Message cannot be empty"
+            )
+
+        if request.language_code not in SUPPORTED_LANGUAGES.values():
+
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported language"
+            )
+
+        chatbot_response = generate_chat_response(
+            message=request.message.strip(),
+            language_code=request.language_code
+        )
+
+        return {
+            "status": "success",
+            "message": request.message,
+            "language_code": request.language_code,
+            "response": chatbot_response
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+
+        print("Chatbot error:", error)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate chatbot response. Please try again."
+        )
+
+
+# ==========================================
+# AI DAILY NEWS PODCAST
+# ==========================================
+
+@app.post("/podcast/generate")
+def generate_daily_podcast(request: PodcastRequest):
+
+    try:
+
+        if request.language_code not in SUPPORTED_PODCAST_LANGUAGES:
+
+            raise HTTPException(
+                status_code=400,
+                detail="Podcast voice is not available for this language"
+            )
+
+        allowed_categories = list(CATEGORIES.keys()) + [
+            "Uncategorized"
+        ]
+
+        for category in request.categories:
+
+            if category not in allowed_categories:
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid category: {category}"
+                )
+
+        with Session(engine) as session:
+
+            query = session.query(News)
+
+            if request.categories:
+
+                category_conditions = [
+                    News.category.ilike(f"%{category}%")
+                    for category in request.categories
+                ]
+
+                from sqlalchemy import or_
+                query = query.filter(or_(*category_conditions))
+
+            articles = (
+                query
+                .order_by(
+                    News.published_date.desc().nullslast(),
+                    News.id.desc()
+                )
+                .limit(20)
+                .all()
+            )
+
+            podcast_articles = []
+
+            for article in articles:
+
+                podcast_articles.append({
+                    "id": article.id,
+                    "title": article.title or "",
+                    "description": article.description or "",
+                    "content": article.content or "",
+                    "url": article.url,
+                    "source": article.source,
+                    "category": article.category,
+                    "published_date": (
+                        article.published_date.isoformat()
+                        if article.published_date else None
+                    )
+                })
+
+        if not podcast_articles:
+
+            raise HTTPException(
+                status_code=404,
+                detail="No news articles found for selected categories"
+            )
+
+        print("\nGenerating podcast script...")
+
+        script = generate_podcast_script(
+            articles=podcast_articles,
+            language_code=request.language_code,
+            duration=request.duration
+        )
+
+        print("\nGenerating podcast audio...")
+
+        audio_data = generate_podcast_audio(
+            script=script,
+            language_code=request.language_code
+        )
+
+        audio_base64 = base64.b64encode(
+            audio_data
+        ).decode("utf-8")
+
+        return {
+            "status": "success",
+            "message": "Podcast generated successfully",
+            "language_code": request.language_code,
+            "duration_minutes": request.duration,
+            "transcript": script,
+            "audio_base64": audio_base64,
+            "audio_mime_type": "audio/mpeg",
+            "total_articles": len(podcast_articles),
+            "sources": [
+                {
+                    "id": article["id"],
+                    "title": article["title"],
+                    "url": article["url"],
+                    "source": article["source"],
+                    "category": article["category"],
+                    "published_date": article["published_date"]
+                }
+                for article in podcast_articles
+            ]
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+
+        print("Podcast generation error:", error)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to generate podcast. Please try again."
+        )
