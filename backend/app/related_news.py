@@ -1,12 +1,11 @@
 
 from datetime import timedelta, timezone
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
 
 from backend.app.database import engine
 from backend.app.models import News
+from backend.app.text_similarity import tfidf_vectors, cosine
 
 
 def get_related_news(news_id, limit=5):
@@ -58,18 +57,16 @@ def get_related_news(news_id, limit=5):
 
             documents.append(article_text)
 
-        vectorizer = TfidfVectorizer(
-            stop_words="english",
+        vectors = tfidf_vectors(
+            documents,
             max_features=5000,
             ngram_range=(1, 2)
         )
 
-        tfidf_matrix = vectorizer.fit_transform(documents)
-
-        similarity_scores = cosine_similarity(
-            tfidf_matrix[0:1],
-            tfidf_matrix[1:]
-        ).flatten()
+        similarity_scores = [
+            cosine(vectors[0], vector)
+            for vector in vectors[1:]
+        ]
 
         results = []
 

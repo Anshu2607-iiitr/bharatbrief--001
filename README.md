@@ -3,7 +3,7 @@
 Official PIB news, collected automatically and sorted by category, in 22 Indian languages, with article audio, an AI chatbot, AI news podcasts, related news, and email + password accounts with OTP verification on signup.
 
 - **Backend:** FastAPI, SQLAlchemy, PostgreSQL, APScheduler (collects PIB news every 30 minutes)
-- **AI:** Sarvam AI for translation, text-to-speech, chat and podcasts; TF-IDF (scikit-learn) for related news
+- **AI:** Sarvam AI for translation, text-to-speech, chat and podcasts; TF-IDF (pure Python, `text_similarity.py`) for related news
 - **Frontend:** React + Vite
 - **Auth:** bcrypt-hashed passwords, JWT tokens (7 days), 6-digit email OTP on signup (10 min expiry, 5 attempts, 60s resend cooldown)
 

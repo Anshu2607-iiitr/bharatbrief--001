@@ -17,7 +17,6 @@ dependencies = [
     "PyJWT",
     "email-validator",
     "sarvamai",
-    "scikit-learn",
 ]",
     "sqlalchemy",
     "psycopg[binary]",
