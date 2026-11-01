@@ -17,18 +17,6 @@ dependencies = [
     "PyJWT",
     "email-validator",
     "sarvamai",
-]",
-    "sqlalchemy",
-    "psycopg[binary]",
-    "feedparser",
-    "httpx",
-    "beautifulsoup4",
-    "pydantic-settings",
-    "python-dotenv",
-    "apscheduler",
-    "bcrypt",
-    "PyJWT",
-    "email-validator",
 ]
 
 # Tells Vercel where the FastAPI app lives
