@@ -20,8 +20,8 @@ BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL")
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_USER = (os.getenv("SMTP_USER") or "").strip() or None
+SMTP_PASSWORD = (os.getenv("SMTP_PASSWORD") or "").replace(" ", "") or None
 
 FROM_NAME = os.getenv("SMTP_FROM_NAME", "Bharat Brief")
 
@@ -97,5 +97,36 @@ def send_otp_email(to_email: str, name: str, otp: str, minutes_valid: int):
         send_with_brevo(to_email, name, subject, text, html)
     elif SMTP_USER and SMTP_PASSWORD:
         send_with_smtp(to_email, subject, text, html)
+    elif os.getenv("VERCEL"):
+        # In production, never pretend an OTP was sent
+        raise RuntimeError("No email provider configured (set SMTP_USER/SMTP_PASSWORD or BREVO_API_KEY)")
     else:
         print(f"\n[DEV] No email provider configured. OTP for {to_email}: {otp}\n")
+
+
+def email_status():
+    """Which provider is configured, and whether it accepts our credentials.
+    Sends no email."""
+    if BREVO_API_KEY and BREVO_SENDER_EMAIL:
+        response = httpx.get(
+            "https://api.brevo.com/v3/account",
+            headers={"api-key": BREVO_API_KEY, "accept": "application/json"},
+            timeout=15,
+        )
+        return {"provider": "brevo", "ok": response.status_code < 400,
+                "detail": f"HTTP {response.status_code}"}
+
+    if SMTP_USER and SMTP_PASSWORD:
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASSWORD)
+            return {"provider": "smtp", "ok": True, "user": SMTP_USER,
+                    "password_length": len(SMTP_PASSWORD)}
+        except Exception as error:
+            return {"provider": "smtp", "ok": False, "user": SMTP_USER,
+                    "password_length": len(SMTP_PASSWORD),
+                    "detail": f"{type(error).__name__}: {error}"[:300]}
+
+    return {"provider": None, "ok": False,
+            "detail": "No SMTP_USER/SMTP_PASSWORD or BREVO_API_KEY/BREVO_SENDER_EMAIL set"}

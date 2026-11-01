@@ -6,14 +6,14 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 # database must be imported first: it loads the .env file
 from backend.app.database import engine
-from backend.app.email_service import send_otp_email
+from backend.app.email_service import email_status, send_otp_email
 from backend.app.models import PendingRegistration, User
 
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -109,6 +109,8 @@ def issue_and_send_otp(session: Session, pending: PendingRegistration):
             status_code=502,
             detail="Could not send OTP email. Please try again in a moment."
         )
+    else:
+        print(f"OTP email sent to {pending.email}")
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -247,3 +249,12 @@ def login(body: LoginRequest):
 @router.get("/me")
 def me(user: User = Depends(get_current_user)):
     return {"status": "success", "user": user_json(user)}
+
+
+@router.get("/email-check")
+def email_check(authorization: str = Header(default=None)):
+    """Admin check of the email setup. Needs: Authorization: Bearer <CRON_SECRET>"""
+    cron_secret = os.getenv("CRON_SECRET")
+    if not cron_secret or authorization != f"Bearer {cron_secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return email_status()
